@@ -99,24 +99,47 @@ def main():
         bpy.context.view_layer.update()
 
         # rest world rotations (3x3), captured after alignment
+        from mathutils import Matrix
         s_rest = {sb.name: (src.matrix_world @ sb.bone.matrix_local).to_3x3() for sb, _ in pairs}
         t_rest = {tb.name: (tgt.matrix_world @ tb.bone.matrix_local).to_3x3() for _, tb in pairs}
-        tw_inv = tgt.matrix_world.inverted()
+
+        # nearest mapped target ancestor for each target bone (for analytic local rotation)
+        tgt_names = {tb.name for _, tb in pairs}
+        parent_of = {}
+        for _, tb in pairs:
+            a = tb.parent
+            while a and a.name not in tgt_names:
+                a = a.parent
+            parent_of[tb.name] = a.name if a else None
+
+        # clamp to the source animation's real frame range (avoid trailing static frames)
+        if src.animation_data and src.animation_data.action:
+            a0, a1 = src.animation_data.action.frame_range
+            f0, f1 = int(a0), int(a1)
+            scene.frame_start, scene.frame_end = f0, f1
 
         bpy.context.view_layer.objects.active = tgt
         bpy.ops.object.mode_set(mode="POSE")
         for _, tb in pairs:
             tb.rotation_mode = "QUATERNION"
+        src_by_tgt = {tb.name: sb for sb, tb in pairs}
+        I3 = Matrix.Identity(3)
 
         for f in range(f0, f1 + 1):
             scene.frame_set(f)
+            # desired WORLD rotation per target bone (math only, no Blender state writes)
+            r_des = {}
             for sb, tb in pairs:
-                s_cur = (src.matrix_world @ sb.matrix).to_3x3()
-                d_w = s_cur @ s_rest[sb.name].inverted()        # source world-space delta from rest
-                desired_w = (d_w @ t_rest[tb.name]).to_4x4()    # target's desired WORLD rotation
-                cur_w = tgt.matrix_world @ tb.matrix            # keep the bone's current world position
-                desired_w.translation = cur_w.translation
-                tb.matrix = tw_inv @ desired_w                  # convert WORLD -> armature space
+                d_w = (src.matrix_world @ sb.matrix).to_3x3() @ s_rest[sb.name].inverted()
+                r_des[tb.name] = d_w @ t_rest[tb.name]
+            # analytic basis: R_basis = R_rest_local^-1 @ R_parent_des^-1 @ R_des  (no staleness)
+            for _, tb in pairs:
+                par = parent_of[tb.name]
+                par_rest = t_rest[par] if par else I3
+                par_des = r_des[par] if par else I3
+                rest_local = par_rest.inverted() @ t_rest[tb.name]
+                basis = rest_local.inverted() @ par_des.inverted() @ r_des[tb.name]
+                tb.rotation_quaternion = basis.to_quaternion()
                 tb.keyframe_insert("rotation_quaternion", frame=f)
 
         bpy.ops.object.mode_set(mode="OBJECT")
@@ -156,8 +179,13 @@ def main():
             scene.collection.objects.link(cam); scene.camera = cam
             cam_d.type = "ORTHO"; cam_d.ortho_scale = max(size) * 1.3
             import math
-            cam.location = (center.x, center.y - max(size) * 3, center.z)
-            cam.rotation_euler = (math.radians(90), 0, 0)
+            view = args.get("view", "front")
+            if view == "side":
+                cam.location = (center.x + max(size) * 3, center.y, center.z)
+                cam.rotation_euler = (math.radians(90), 0, math.radians(90))
+            else:
+                cam.location = (center.x, center.y - max(size) * 3, center.z)
+                cam.rotation_euler = (math.radians(90), 0, 0)
             n = int(args.get("preview_frames", 4))
             name = args.get("name", "anim")
             for i in range(n):
