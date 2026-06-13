@@ -32,6 +32,22 @@ SKIP_MOTION_CORRECTION_IN_SETUP=1 pip install --retries 10 -r docker_requirement
 echo ">> sanity: kimodo_gen present"
 which kimodo_gen || python -c "import kimodo; print('kimodo', kimodo.__file__)"
 
+# The combined pip build of motion_correction's CMake/pybind11 extension can target the
+# WRONG python (Ubuntu's default python3 is 3.10, but the runtime is 3.11), producing a
+# cp310 .so that won't import. Rebuild it explicitly against python3.11 and drop the .so
+# into the installed package.
+echo ">> (re)build motion_correction C++ extension for python3.11"
+PY311="$(command -v python3.11 || echo /usr/bin/python3.11)"
+python -m pip install -q pybind11 || true
+MC_PKG="$(dirname "$($PY311 -c 'import importlib.util as u; print(u.find_spec("motion_correction").origin)')")"
+( cd /opt/kimodo/MotionCorrection && rm -rf build \
+  && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPYBIND11_FINDPYTHON=ON \
+       -DPython_EXECUTABLE="$PY311" -DPython3_EXECUTABLE="$PY311" \
+  && cmake --build build -j4 )
+MC_SO="$(find /opt/kimodo/MotionCorrection/build -name '_motion_correction*.so' | head -1)"
+cp "$MC_SO" "$MC_PKG/" && echo ">> installed $MC_SO -> $MC_PKG"
+$PY311 -c "from motion_correction import _motion_correction; print('motion_correction ext OK')"
+
 # Stage the text encoder from a non-gated, license-compliant Llama-3 mirror so we
 # never hit Meta's manual-review gate. Needs only an HF token. Generation must then
 # run with: TEXT_ENCODERS_DIR=/opt/text_encoders TEXT_ENCODER_MODE=local
