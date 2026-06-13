@@ -21,10 +21,14 @@ baked into `provision_mia.sh` + `cloud/engines/mia/run_mia.py`; see Gotchas belo
 
 ## Prerequisites (check first)
 1. `RUNPOD_API_KEY` in `D:/riggs/.env` (already set if this project is configured).
-2. **MIA only:** `HF_TOKEN` in `D:/riggs/.env`. MIA loads `data/Mixamo/bones.fbx`
-   (the Mixamo skeleton template) at import time, and that dataset is GATED — you
-   must accept the terms once at https://huggingface.co/datasets/jasongzy/Mixamo
-   while logged in, then use a read token. Provisioning fetches just that one file.
+2. `HF_TOKEN` (or `HF_ACCESS_TOKEN`) in `D:/riggs/.env`, read scope. A token is NOT
+   enough on its own — you must also click **Agree / Request access** on each gated
+   repo once, with the same account the token belongs to, or downloads 403 mid-run:
+   - **Rigging (MIA):** https://huggingface.co/datasets/jasongzy/Mixamo — gated
+     Mixamo bone templates, loaded at import. Usually granted instantly on agreeing.
+   - **Animation (Kimodo):** https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
+     — Kimodo's text encoder. **Meta manual review**, can take minutes to hours; submit
+     early. Commercial OK under the Llama 3 Community License.
 3. `pip install runpod` (the SDK) and OpenSSH client `ssh`/`scp`/`ssh-keygen` on PATH
    (built into Windows 10+ and Linux).
 4. RunPod account has a little credit. A rig run is ~15-25 min on a cheap GPU

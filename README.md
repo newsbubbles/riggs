@@ -63,7 +63,19 @@ see the output without spending anything.
 | Key | What | Where |
 |-----|------|-------|
 | `RUNPOD_API_KEY` | rents the GPU | https://www.runpod.io/console/user/settings |
-| `HF_ACCESS_TOKEN` | the MIA engine loads gated Mixamo bone templates | https://huggingface.co/settings/tokens — and click **Agree** once at https://huggingface.co/datasets/jasongzy/Mixamo |
+| `HF_ACCESS_TOKEN` | downloads the gated model/data below | https://huggingface.co/settings/tokens (read scope) |
+
+### Hugging Face gated access (the part that trips people up)
+A token alone is **not enough**. Some repos are gated, so you must also click **"Agree / Request access"** on each repo page once, while logged in with the same account your token belongs to. Otherwise downloads 403 mid-run.
+
+| Accept this repo | Needed for | License (commercial?) |
+|---|---|---|
+| [datasets/jasongzy/Mixamo](https://huggingface.co/datasets/jasongzy/Mixamo) | **Rigging** (MIA loads the Mixamo bone templates) | Mixamo terms; output rig is yours |
+| [meta-llama/Meta-Llama-3-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct) | **Animation** (Kimodo's text encoder) | Llama 3 Community License (commercial OK under 700M MAU) |
+
+Notes:
+- The Mixamo dataset usually grants access instantly on agreeing.
+- The **Llama-3** repo is **manual review by Meta** — it can take minutes to a few hours after you submit Meta's access form. Submit it early. Until it shows "access granted," animation generation will 403 on the text encoder.
 
 ## Drive it with your Claude Code agent
 
