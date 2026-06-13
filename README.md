@@ -150,8 +150,12 @@ and exports a UE-ready FBX.
 > - Leave orientation on the defaults; UE converts Y-up to its Z-up automatically. Do **not** try to
 >   pre-rotate the rigged mesh in Blender, baking a rotation across an armature+skin bind is flaky.
 >
-> Then either bind to the Mannequin skeleton directly, or set up an IK Retargeter (the bones are
-> already Mannequin-named, so auto-characterization just works).
+**Validated path (UE 5.6):** import with **Offset/Import Uniform Scale = 100** and **Skeleton = None**
+so the character gets its own skeleton (don't bind to your project's shared `SK_Mannequin` — UE refuses
+the merge because of the added `root` bone, and offers to mutate the shared Manny/Quinn skeleton, which
+you should decline). Then make an **IK Rig** (Auto Create Retarget Chains maps everything instantly,
+since the bones are Mannequin-named) and an **IK Retargeter** (Manny → your character) to play/export
+the Mannequin's stock animations. Full step-by-step in [notes/07-ue5-import.md](notes/07-ue5-import.md).
 
 ## Repo layout
 ```
