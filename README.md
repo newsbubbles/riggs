@@ -1,83 +1,181 @@
+<div align="center">
+
 # riggs
 
-Auto-rigging and auto-weighting for 3D humanoid characters, built so an LLM can drive the
-whole thing from a mesh file to a poseable, UE5-ready rig with almost no human in the loop.
+### _"I'm gettin' too old for this shit."_
 
-Named after the lethal weapon character.
+**Auto-rig and auto-weight any humanoid mesh into a poseable, game-ready skeleton, driven by your AI agent.**
 
-## Status: working ✅
+No manual bone placement. No weight painting. No fighting Mixamo's web UI. One command, a mesh goes in, a clean rigged FBX comes out.
 
-A generated humanoid mesh goes in, a properly boned, properly weighted, poseable rig comes
-out. Verified end to end on the datastorm "ATLAS Guard": clean Mixamo rig (52 bones, fingers
-articulated, 0 unweighted vertices, max 4 influences), posed in Blender with smooth
-deformation. No manual bone placement, no vision-guessing, no fighting Mixamo's web UI.
+<img src="examples/guard_rig_preview.png" width="420" alt="the bundled Guard, auto-rigged"/>
 
-## The problem and the insight
+</div>
 
-Mesh generation is solved (fal.ai Rodin / Hyper3D from a concept image). Articulation was the
-wall — and the wall was the *approach*: trying to get a vision model to place bones by looking
-at screenshots fights every tool in the stack. The fix:
+---
 
-1. **ML auto-riggers do skeleton + skinning end to end from geometry.** One command, mesh in,
-   rigged FBX out. They read the actual mesh instead of assuming a pose, which is why they
-   solve the classic "A-pose mesh vs T-pose skeleton" mismatch automatically.
-2. **Blender's `bpy` gives deterministic spatial analysis + validation.** The LLM orchestrates
-   and verifies with discrete pass/fail checks (every deform bone has a vertex group, no
-   unweighted verts, weights sum to 1.0, hierarchy connected, symmetry) — never eyeballing.
+## What it does
 
-Vision is reserved for one optional sanity-check render after the deterministic checks pass.
+You have a humanoid mesh (generated, sculpted, scanned, whatever). riggs turns it into a fully
+rigged, fully skinned, animation-ready character, running the heavy ML rigging on a cheap rented
+cloud GPU so you do not need a beefy local card. The result is a Mixamo/UE-Mannequin skeleton with
+clean weights that you can pose immediately and drop into Unreal Engine.
 
-## Engines
+It is built to be driven by an **AI coding agent** (Claude Code), so you can literally say
+"rig this mesh" and it happens. There is also a plain CLI if you prefer to drive it yourself.
 
-| Engine | License | Skeleton | Skin | GPU | Notes |
-|--------|---------|----------|------|-----|-------|
-| **MIA** (Make-It-Animatable) | code MIT, weights Apache-2.0 | Mixamo | yes | any CUDA | **default**, commercial OK, proven working |
-| **UniRig** | MIT | own topology | not yet released | sm_75+ | skeleton-only today; for the bake-off |
+## Why
 
-## How it works
+Rigging a generated mesh has always been the wall. The usual failure is trying to get a vision
+model to eyeball bone positions onto a mesh, which fights every tool in the stack and is miserable
+to verify. riggs takes a different path:
 
-```
-mesh (glb/fbx/obj)
-  -> extract_base.py        clean unrigged base (bpy)
-  -> rp.py rig --engine mia  spin a cloud GPU pod, auto-rig, pull rigged FBX
-  -> analyze.py / render.py  validate (structured checks) + bone-overlay render
-  -> [canonicalize -> UE5 Mannequin + ik_ bones -> export]   (in progress)
-```
-
-The heavy ML rigging runs on a rented cloud GPU (cheap, ~$0.10/character), so you don't need
-a capable local GPU. One CLI command spins the pod, provisions, rigs, pulls the result, and
-tears the pod down.
-
-## Layout
-- `src/riggs/blender_runner.py` — cross-platform headless Blender launcher
-- `src/riggs/bpy_scripts/` — `analyze.py` (validate_rig), `render.py` (bone-overlay render),
-  `extract_base.py` (clean base mesh)
-- `cloud/` — Docker images + RunPod control. `cloud/runpod/rp.py` is the GPU control CLI;
-  `cloud/runpod/provision_mia.sh` provisions a pod; `cloud/engines/` has the engine wrappers
-  and Dockerfiles. See `cloud/README.md`.
-- `.claude/skills/runpod-rig/` — reusable skill so any agent can rig on RunPod
-- `notes/` — research + architecture + the working-rig writeup (`05-first-working-rig.md`)
-
-## Setup
-1. `cp .env.example .env` and fill in `RUNPOD_API_KEY` + `HF_ACCESS_TOKEN`
-   (accept terms once at https://huggingface.co/datasets/jasongzy/Mixamo for MIA).
-2. `pip install -r requirements.txt`
-3. Blender 4.x/5.x installed (the bpy scripts find it automatically; or set `RIGGS_BLENDER`).
+1. **An ML auto-rigger reads the geometry** and places the skeleton + skin weights end to end. It
+   sees the actual mesh instead of assuming a pose, so it fixes the classic "A-pose mesh vs T-pose
+   skeleton" mismatch on its own.
+2. **A `bpy` validation layer** turns "does this rig look right?" into discrete, structured pass/fail
+   checks (every bone has a vertex group, no unweighted verts, weights sum to 1.0, single root,
+   symmetry). The agent reads those instead of guessing.
 
 ## Quick start
-```
-# rig a mesh on a cloud GPU
-cd cloud/runpod
-python rp.py rig --engine mia --input ../../out/Guard_base.glb --output ../../out/Guard.fbx
 
-# validate + render locally
-cd ../..
-python src/riggs/blender_runner.py src/riggs/bpy_scripts/analyze.py '{"file": "out/Guard.fbx"}'
+```bash
+git clone <your-fork-url> riggs && cd riggs
+cp .env.example .env          # add your RunPod + Hugging Face keys (see below)
+pip install -r requirements.txt
+```
+
+Rig the **bundled Guard** on a cloud GPU:
+
+```bash
+cd cloud/runpod
+python rp.py rig --engine mia \
+    --input  ../../examples/Guard_base.glb \
+    --output ../../examples/Guard_rigged.fbx
+```
+
+That single command spins up a GPU pod, provisions the rigger, rigs the mesh, pulls the FBX back,
+and tears the pod down. First run is ~15-20 min (it installs the engine + downloads weights);
+roughly **$0.10** of GPU time. `examples/Guard_UE.fbx` is the pre-rigged result if you just want to
+see the output without spending anything.
+
+### Keys you need (`.env`)
+| Key | What | Where |
+|-----|------|-------|
+| `RUNPOD_API_KEY` | rents the GPU | https://www.runpod.io/console/user/settings |
+| `HF_ACCESS_TOKEN` | the MIA engine loads gated Mixamo bone templates | https://huggingface.co/settings/tokens — and click **Agree** once at https://huggingface.co/datasets/jasongzy/Mixamo |
+
+## Drive it with your Claude Code agent
+
+riggs ships a **skill** (`.claude/skills/runpod-rig/`) that Claude Code auto-discovers in this repo.
+Once your `.env` is set, just talk to your agent:
+
+> **"Rig examples/Guard_base.glb on RunPod and pull the result back."**
+
+> **"Spin up an RTX 3090 pod, rig this mesh, then terminate it."**
+
+> **"What RunPod GPUs are cheapest right now?"**
+
+The agent invokes the skill, runs the right `rp.py` commands, watches the job, and hands you the
+rigged FBX. It knows the gotchas (gated dataset, scale, SSH) because they are baked into the skill
+and the provisioning scripts.
+
+Want it available everywhere, not just this repo? Copy `.claude/skills/runpod-rig/` into
+`~/.claude/skills/` for a global skill.
+
+## How the cloud setup works
+
+The whole thing is a thin control layer over RunPod. `cloud/runpod/rp.py` is the CLI:
+
+```bash
+python rp.py gpus                      # list GPU types, sorted by price
+python rp.py up --gpu "NVIDIA GeForce RTX 3090"   # create a pod, print its SSH
+python rp.py status <pod_id>           # state + connection
+python rp.py exec   <pod_id> -- nvidia-smi
+python rp.py push   <pod_id> local.glb /opt/riggs/in.glb
+python rp.py pull   <pod_id> /opt/riggs/out.fbx out.fbx
+python rp.py stop   <pod_id>           # pause GPU billing
+python rp.py resume <pod_id>
+python rp.py down   <pod_id>           # terminate
+python rp.py rig --engine mia --input mesh.glb --output rigged.fbx   # the one-shot
+```
+
+It authenticates with just your `RUNPOD_API_KEY`, generates an SSH keypair, injects the public key
+into the pod via the `PUBLIC_KEY` env var (no dashboard step), provisions a stock GPU pod at runtime
+(no registry or local Docker build required), runs the rig, and retrieves the file.
+
+### Engines
+| Engine | License | Skeleton | Skin weights | GPU | Use |
+|--------|---------|----------|--------------|-----|-----|
+| **MIA** ([Make-It-Animatable](https://github.com/jasongzy/Make-It-Animatable)) | code MIT, weights Apache-2.0 | Mixamo | yes | any CUDA | **default**, commercial-OK, full rig |
+| **UniRig** ([VAST-AI](https://github.com/VAST-AI-Research/UniRig)) | MIT | own topology | not yet released | sm_75+ | skeleton-only today, for the bake-off |
+
+MIA is the one that produces a complete, commercially usable rig right now. Its output rig is yours.
+
+## Validate and preview locally (free, no GPU)
+
+The `bpy` tools run in your local Blender (found automatically, or set `RIGGS_BLENDER`):
+
+```bash
+# structured rig validation
+python src/riggs/blender_runner.py src/riggs/bpy_scripts/analyze.py '{"file": "examples/Guard_UE.fbx"}'
+# bone-overlay render (front/side)
+python src/riggs/blender_runner.py src/riggs/bpy_scripts/render.py '{"file": "examples/Guard_UE.fbx", "out_dir": "out", "show_bones": true}'
+# convert a Mixamo-rigged FBX -> UE Mannequin names + ik_ bones, UE-ready export
+python src/riggs/blender_runner.py src/riggs/bpy_scripts/canonicalize_ue5.py '{"file": "in.fbx", "output": "out_UE.fbx"}'
+```
+
+## Getting it into Unreal Engine
+
+`canonicalize_ue5.py` renames the Mixamo skeleton to the UE Mannequin convention (`pelvis`,
+`spine_01..03`, `upperarm_l`, etc.), adds the `root` and `ik_` bones UE expects, normalizes weights,
+and exports a UE-ready FBX.
+
+> ### ⚠️ The FBX scale + orientation gotcha (read this before you import)
+> Mixamo/MIA output (and therefore the exported FBX) is **Y-up and in meters**. This is a standard
+> FBX, and Unreal's importer is built to handle it, but you must set the right import options or the
+> character comes in tiny or lying down:
+>
+> - **Import Uniform Scale = `100`** (the mesh is in meters; UE works in centimeters). Skip this and
+>   your 1.9 m character imports as 1.9 cm.
+> - Leave orientation on the defaults; UE converts Y-up to its Z-up automatically. Do **not** try to
+>   pre-rotate the rigged mesh in Blender, baking a rotation across an armature+skin bind is flaky.
+>
+> Then either bind to the Mannequin skeleton directly, or set up an IK Retargeter (the bones are
+> already Mannequin-named, so auto-characterization just works).
+
+## Repo layout
+```
+src/riggs/
+  blender_runner.py        cross-platform headless Blender launcher
+  bpy_scripts/             analyze (validate), render (bone overlay), extract_base, canonicalize_ue5
+cloud/
+  runpod/rp.py             the RunPod control CLI
+  runpod/provision_mia.sh  provisions a stock pod (mirrors the Dockerfile)
+  engines/{mia,unirig}/    engine wrappers + Dockerfiles
+  riggs_entry.py           engine-agnostic entrypoint (one-shot | serverless)
+.claude/skills/runpod-rig/ the agent skill
+examples/                  the bundled Guard (base mesh + rigged result + preview)
+notes/                     research + architecture + writeups
 ```
 
 ## Roadmap
-- [x] Auto-rig (skeleton + skin) from a generated mesh, cloud-driven
-- [x] Validation + bone-overlay render, reusable RunPod skill
-- [ ] Weight normalization pass
-- [ ] Canonicalize Mixamo → UE5 Mannequin + `ik_` bones, UE5 FBX export
-- [ ] Animation (next)
+- [x] Auto-rig (skeleton + skin) from any humanoid mesh, cloud-driven
+- [x] Structured validation + bone-overlay render
+- [x] RunPod control CLI + reusable Claude skill
+- [x] Mixamo to UE Mannequin canonicalize + UE-ready export
+- [ ] **Animation** (next, and it is going to be good)
+- [ ] More engines, more targets, batch rigging
+
+## Acknowledgements
+[Make-It-Animatable](https://github.com/jasongzy/Make-It-Animatable) and
+[UniRig](https://github.com/VAST-AI-Research/UniRig) do the heavy lifting. Cloud GPUs via
+[RunPod](https://runpod.io). Built to be driven by [Claude Code](https://claude.com/claude-code).
+
+## License
+MIT (see [LICENSE](LICENSE)). The engines are pulled at runtime and carry their own licenses; the
+rig you produce is yours.
+
+---
+
+<div align="center"><sub>Named after Riggs. Rigs characters. The pun wrote itself.</sub></div>
