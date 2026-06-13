@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -214,6 +215,43 @@ def cmd_rig(args):
             print(f"terminated {pid}")
 
 
+def cmd_motion(args):
+    """One-shot text -> motion BVH on a fresh pod (Kimodo, Meta-gate-free)."""
+    hf = os.environ.get("HF_TOKEN") or os.environ.get("HF_ACCESS_TOKEN") or ""
+    provision = HERE / "provision_kimodo.sh"
+    setup = HERE / "setup_text_encoder.py"
+    pid, ip, port = cmd_up(args)
+    try:
+        ssh = _ssh_base(ip, port)
+        subprocess.run(ssh + ["mkdir -p /opt/riggs"], check=True)
+        for f in (provision, setup):
+            if _scp(ip, port, str(f), f"root@{ip}:/opt/riggs/{f.name}"):
+                sys.exit(f"failed to upload {f.name}")
+        print("provisioning Kimodo (first run installs deps + downloads model, ~15-20 min) ...")
+        rc = subprocess.run(ssh + [f"cd /opt/riggs && HF_TOKEN={hf} bash provision_kimodo.sh"]).returncode
+        if rc != 0:
+            sys.exit("provisioning failed (use --keep and ssh in to debug)")
+        print(f"generating motion: {args.prompt!r}")
+        rc = subprocess.run(ssh + [
+            "cd /opt/riggs && TEXT_ENCODERS_DIR=/opt/text_encoders TEXT_ENCODER_MODE=local "
+            f"HF_TOKEN={hf} kimodo_gen {shlex.quote(args.prompt)} --model {args.model} "
+            f"--duration {args.duration} --output /opt/riggs/clip --bvh --bvh_standard_tpose"
+        ]).returncode
+        if rc != 0:
+            sys.exit("generation failed (use --keep and ssh in to debug)")
+        if _scp(ip, port, f"root@{ip}:/opt/riggs/clip.bvh", args.output):
+            sys.exit("failed to download BVH")
+        print(f"DONE -> {args.output}\nRetarget onto a rig: python ../../src/riggs/blender_runner.py "
+              f"../../src/riggs/bpy_scripts/retarget_motion.py "
+              f"'{{\"target\":\"RIG.fbx\",\"bvh\":\"{args.output}\",\"output\":\"ANIM.fbx\"}}'")
+    finally:
+        if args.keep:
+            print(f"--keep set; pod {pid} left running. Terminate: python rp.py down {pid}")
+        else:
+            runpod.terminate_pod(pid)
+            print(f"terminated {pid}")
+
+
 def main():
     load_key()
     ap = argparse.ArgumentParser(prog="rp")
@@ -249,6 +287,14 @@ def main():
     p.add_argument("--opts", default="{}")
     p.add_argument("--keep", action="store_true", help="don't terminate the pod after")
     p.set_defaults(func=cmd_rig)
+
+    p = sub.add_parser("motion"); add_pod_opts(p)
+    p.add_argument("--prompt", required=True, help="text describing the motion")
+    p.add_argument("--output", required=True, help="where to write the .bvh")
+    p.add_argument("--model", default="Kimodo-SOMA-RP-v1.1", help="Kimodo SOMA checkpoint (commercial)")
+    p.add_argument("--duration", default="5.0")
+    p.add_argument("--keep", action="store_true", help="don't terminate the pod after")
+    p.set_defaults(func=cmd_motion)
 
     args = ap.parse_args()
     args.func(args)

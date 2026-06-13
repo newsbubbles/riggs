@@ -65,17 +65,14 @@ see the output without spending anything.
 | `RUNPOD_API_KEY` | rents the GPU | https://www.runpod.io/console/user/settings |
 | `HF_ACCESS_TOKEN` | downloads the gated model/data below | https://huggingface.co/settings/tokens (read scope) |
 
-### Hugging Face gated access (the part that trips people up)
-A token alone is **not enough**. Some repos are gated, so you must also click **"Agree / Request access"** on each repo page once, while logged in with the same account your token belongs to. Otherwise downloads 403 mid-run.
+### Hugging Face gated access (the one thing that trips people up)
+A token alone is **not enough** for rigging: you must also click **"Agree / Request access"** once on the Mixamo dataset page, logged in with the same account your token belongs to, or downloads 403 mid-run.
 
-| Accept this repo | Needed for | License (commercial?) |
+| Accept this repo | Needed for | Notes |
 |---|---|---|
-| [datasets/jasongzy/Mixamo](https://huggingface.co/datasets/jasongzy/Mixamo) | **Rigging** (MIA loads the Mixamo bone templates) | Mixamo terms; output rig is yours |
-| [meta-llama/Meta-Llama-3-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct) | **Animation** (Kimodo's text encoder) | Llama 3 Community License (commercial OK under 700M MAU) |
+| [datasets/jasongzy/Mixamo](https://huggingface.co/datasets/jasongzy/Mixamo) | **Rigging** (MIA loads the Mixamo bone templates) | Usually granted instantly on agreeing. Output rig is yours. |
 
-Notes:
-- The Mixamo dataset usually grants access instantly on agreeing.
-- The **Llama-3** repo is **manual review by Meta** — it can take minutes to a few hours after you submit Meta's access form. Submit it early. Until it shows "access granted," animation generation will 403 on the text encoder.
+**Animation needs no extra acceptance.** Kimodo's text encoder is Llama-3-8B, which Meta gates behind a manual-review queue — but Llama 3's Community License permits redistribution, so riggs pulls a license-compliant non-gated mirror automatically (`setup_text_encoder.py`). You only need the HF token, no waiting on Meta.
 
 ## Drive it with your Claude Code agent
 
@@ -159,25 +156,30 @@ and exports a UE-ready FBX.
 ## Repo layout
 ```
 src/riggs/
-  blender_runner.py        cross-platform headless Blender launcher
-  bpy_scripts/             analyze (validate), render (bone overlay), extract_base, canonicalize_ue5
+  blender_runner.py          cross-platform headless Blender launcher
+  bpy_scripts/               analyze (validate), render (bone overlay), extract_base,
+                             canonicalize_ue5, retarget_motion (SOMA->Mixamo), diag_retarget
 cloud/
-  runpod/rp.py             the RunPod control CLI
-  runpod/provision_mia.sh  provisions a stock pod (mirrors the Dockerfile)
-  engines/{mia,unirig}/    engine wrappers + Dockerfiles
-  riggs_entry.py           engine-agnostic entrypoint (one-shot | serverless)
-.claude/skills/runpod-rig/ the agent skill
-examples/                  the bundled Guard (base mesh + rigged result + preview)
-notes/                     research + architecture + writeups
+  runpod/rp.py               the RunPod control CLI (rig + motion + pod lifecycle)
+  runpod/provision_*.sh      provision a stock pod for MIA (rig) / Kimodo (motion)
+  runpod/setup_text_encoder.py  stages Kimodo's Llama-3 encoder from a non-gated mirror
+  engines/{mia,unirig}/      engine wrappers + Dockerfiles
+  riggs_entry.py             engine-agnostic entrypoint (one-shot | serverless)
+.claude/skills/runpod-rig/   the rigging skill
+.claude/skills/animate/      the animation skill (text -> motion -> retarget)
+examples/                    the bundled Guard (base mesh + rigged result + preview)
+examples/motion/             sample Kimodo clips (walk / jig / taunt BVH)
+notes/                       research + architecture + writeups
 ```
 
 ## Roadmap
 - [x] Auto-rig (skeleton + skin) from any humanoid mesh, cloud-driven
 - [x] Structured validation + bone-overlay render
-- [x] RunPod control CLI + reusable Claude skill
+- [x] RunPod control CLI + reusable Claude skills
 - [x] Mixamo to UE Mannequin canonicalize + UE-ready export
-- [ ] **Animation** (next, and it is going to be good)
-- [ ] More engines, more targets, batch rigging
+- [x] **Animation**: text prompt → motion ([Kimodo](https://github.com/nv-tlabs/kimodo), commercial-clean, no Meta gate) → retargeted onto your rig (`animate` skill)
+- [ ] Polish the UE5 import path (scale/orientation presets, IK Retargeter setup)
+- [ ] More rig/motion engines behind the adapters; non-humanoid + more skeleton targets; batch (rig/animate a whole folder in one run)
 
 ## Acknowledgements
 [Make-It-Animatable](https://github.com/jasongzy/Make-It-Animatable) and
