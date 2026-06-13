@@ -8,7 +8,7 @@
 
 No manual bone placement. No weight painting. No fighting Mixamo's web UI. One command, a mesh goes in, a clean rigged FBX comes out.
 
-<img src="examples/guard_rig_preview.png" width="420" alt="the bundled Guard, auto-rigged"/>
+<img src="examples/riggs.webp" width="460" alt="the bundled Guard, auto-rigged and posed"/>
 
 </div>
 
