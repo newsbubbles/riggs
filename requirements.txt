@@ -1,0 +1,3 @@
+# Local (control-side) deps. The GPU engines run in the cloud image / on the pod,
+# not here. The bpy scripts run inside Blender's own bundled Python.
+runpod>=1.9

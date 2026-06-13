@@ -1,0 +1,29 @@
+# SECRETS — never commit
+.env
+*.env
+!.env.example
+cloud/runpod/.ssh/
+id_ed25519*
+*.pem
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+# work outputs
+out/
+tmp/
+*.blend1
+# large model weights / engine checkouts (vendored separately, pulled at runtime)
+# NOTE: /engines/ is the root-level clones; cloud/engines/ (our Dockerfiles) IS committed.
+/engines/
+*.ckpt
+*.pth
+*.safetensors
+# test assets are referenced from datastorm, not committed
+test_assets/*.fbx
+test_assets/*.glb
+test_assets/*.FBX
