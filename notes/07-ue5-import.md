@@ -26,9 +26,35 @@ Goal: rigged model (no baked anim) plays the Mannequin's built-in animations.
    `Retarget Pose From Mesh` anim node at runtime). The 3-spine Guard vs 5-spine UE5 Manny is handled
    by the Spine chain automatically.
 
+## UPDATE (2026-06-13, UE 5.7.4): direct bind imports + plays, but MANGLES the anim — RETRACTED
+Ran `cloud/ue/ue_scripts/import_and_test.py` headless. It imports, binds to `UE4_Mannequin_Skeleton`,
+and the JSON reports anims "playing" with motion (sampled `thigh_l`: Idle 4.6 / Walk 20.0 / Run 37.0).
+I briefly concluded direct-bind made the retargeter unnecessary. **WRONG — visual QA killed it.**
+On screen the ref pose is clean and upright, but the instant a Mannequin anim/blendspace drives the
+rig it collapses face-down and splayed (bbox flips 95x46x183 standing -> 95x229x231 prone).
+
+Root cause (confirmed in code): `canonicalize_ue5.py` only **renames** Mixamo bones to Mannequin
+names; it never re-orients them, and exports with `primary_bone_axis="Y"` (Mixamo convention). So the
+skeleton is Mannequin-NAMED but Mixamo-ORIENTED. A Mannequin AnimSequence stores local rotations
+relative to the Mannequin's bone axes; applied to Mixamo-oriented bones, every bone rotates around the
+wrong axis -> abomination. Ref pose looks fine because no rotation is applied. The `import_and_test`
+JSON can't catch this: `thigh_l_moved_deg` proves the bone moved, not that it moved correctly. This is
+exactly the render-QA-as-final-gate case the architecture calls out.
+
+Lesson: `import_and_test.py`'s direct-bind is a STRUCTURAL smoke test only (does it import, do names
+line up, does a bone move). It is NOT proof the animation is correct. Never ship on it without an
+eyes-on / rendered playback check. TODO: extend the harness to bake one retargeted frame and compare
+bone WORLD positions against the source to catch orientation mismatch numerically.
+
+**Correct path = the IK Retargeter below** (this is what the canonicalize naming was always FOR:
+auto-characterization maps the chains instantly). Import Skeleton=None -> own skeleton -> IK Rig ->
+IK Retargeter (Manny source -> Guard target) -> batch-bake the stock anims onto the Guard. The
+retargeter resolves the orientation (and any T-pose-vs-A-pose base-pose) gap in pose space.
+
 ## Optional: enable a TRUE direct bind (no retargeter)
 Re-export the Guard WITHOUT the extra `root` bone (so `pelvis` is top, matching this project's
 `SK_Mannequin`), and add the 8 twist bones (`{upperarm,lowerarm,thigh,calf}_twist_01_{l,r}`) at
 identity so the skeleton is an exact Mannequin superset. Then "Import with Skeleton = SK_Mannequin"
 merges and the Guard plays Mannequin anims with zero retargeting. The retargeter path is more robust
 and engine-idiomatic, so it's the default; this is only if you want literal skeleton-sharing.
+(Superseded in practice by the 2026-06-13 UPDATE above: the legacy importer already does the merge.)

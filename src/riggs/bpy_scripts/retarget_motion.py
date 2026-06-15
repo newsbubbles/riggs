@@ -19,22 +19,55 @@ RESULT_BEGIN = "RIGGS_RESULT_BEGIN"
 RESULT_END = "RIGGS_RESULT_END"
 P = "mixamorig:"
 
-# SOMA (BVH joint) -> Mixamo (without prefix)
-MAP = {
-    "Hips": "Hips",
-    "Spine1": "Spine", "Spine2": "Spine1", "Chest": "Spine2",
-    "Neck1": "Neck", "Head": "Head",
-    "LeftLeg": "LeftUpLeg", "LeftShin": "LeftLeg", "LeftFoot": "LeftFoot", "LeftToeBase": "LeftToeBase",
-    "RightLeg": "RightUpLeg", "RightShin": "RightLeg", "RightFoot": "RightFoot", "RightToeBase": "RightToeBase",
-}
-for s in ("Left", "Right"):
-    MAP[f"{s}Shoulder"] = f"{s}Shoulder"
-    MAP[f"{s}Arm"] = f"{s}Arm"
-    MAP[f"{s}ForeArm"] = f"{s}ForeArm"
-    MAP[f"{s}Hand"] = f"{s}Hand"
-    for f in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
-        for n in (1, 2, 3):
-            MAP[f"{s}Hand{f}{n}"] = f"{s}Hand{f}{n}"
+# Target is always our Mixamo rig (mixamorig: bones). Each source preset maps a
+# SOURCE bone name -> Mixamo target bone name (without the prefix). Pick with
+# args["source"] in {"soma","mixamo","mannequin"} (default "soma").
+
+def _mixamo_bones():
+    names = ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"]
+    for s in ("Left", "Right"):
+        names += [f"{s}Shoulder", f"{s}Arm", f"{s}ForeArm", f"{s}Hand",
+                  f"{s}UpLeg", f"{s}Leg", f"{s}Foot", f"{s}ToeBase"]
+        for f in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+            names += [f"{s}Hand{f}{n}" for n in (1, 2, 3)]
+    return names
+
+
+def _soma_map():
+    m = {"Hips": "Hips", "Spine1": "Spine", "Spine2": "Spine1", "Chest": "Spine2",
+         "Neck1": "Neck", "Head": "Head"}
+    for s in ("Left", "Right"):
+        m[f"{s}Leg"] = f"{s}UpLeg"; m[f"{s}Shin"] = f"{s}Leg"
+        m[f"{s}Foot"] = f"{s}Foot"; m[f"{s}ToeBase"] = f"{s}ToeBase"
+        m[f"{s}Shoulder"] = f"{s}Shoulder"; m[f"{s}Arm"] = f"{s}Arm"
+        m[f"{s}ForeArm"] = f"{s}ForeArm"; m[f"{s}Hand"] = f"{s}Hand"
+        for f in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+            for n in (1, 2, 3):
+                m[f"{s}Hand{f}{n}"] = f"{s}Hand{f}{n}"
+    return m
+
+
+def _mixamo_map():  # source is already a Mixamo skeleton -> identity (handles rest-pose diffs)
+    return {f"mixamorig:{b}": b for b in _mixamo_bones()}
+
+
+def _mannequin_map():  # UE4 Mannequin / SK_Mannequin (3 spine) -> Mixamo
+    m = {"pelvis": "Hips", "spine_01": "Spine", "spine_02": "Spine1", "spine_03": "Spine2",
+         "neck_01": "Neck", "head": "Head"}
+    for u, s in (("l", "Left"), ("r", "Right")):
+        m[f"clavicle_{u}"] = f"{s}Shoulder"; m[f"upperarm_{u}"] = f"{s}Arm"
+        m[f"lowerarm_{u}"] = f"{s}ForeArm"; m[f"hand_{u}"] = f"{s}Hand"
+        m[f"thigh_{u}"] = f"{s}UpLeg"; m[f"calf_{u}"] = f"{s}Leg"
+        m[f"foot_{u}"] = f"{s}Foot"; m[f"ball_{u}"] = f"{s}ToeBase"
+        for uf, mf in (("thumb", "Thumb"), ("index", "Index"), ("middle", "Middle"),
+                       ("ring", "Ring"), ("pinky", "Pinky")):
+            for n in (1, 2, 3):
+                m[f"{uf}_0{n}_{u}"] = f"{s}Hand{mf}{n}"
+    return m
+
+
+SOURCE_MAPS = {"soma": _soma_map(), "mixamo": _mixamo_map(), "mannequin": _mannequin_map()}
+SRC_HIP = {"soma": "Hips", "mixamo": "mixamorig:Hips", "mannequin": "pelvis"}
 
 
 def get_args():
@@ -78,16 +111,23 @@ def main():
         scene = bpy.context.scene
         f0, f1 = scene.frame_start, scene.frame_end
 
+        source = args.get("source", "soma")
+        if source not in SOURCE_MAPS:
+            raise ValueError(f"source must be one of {list(SOURCE_MAPS)}, got {source!r}")
+        amap = SOURCE_MAPS[source]
+
         # resolve mapped pairs that exist in both rigs
         pairs = []
-        for sj, mj in MAP.items():
+        for sj, mj in amap.items():
             sb = src.pose.bones.get(sj)
             tb = tgt.pose.bones.get(P + mj) or tgt.pose.bones.get(mj)
             if sb and tb:
                 pairs.append((sb, tb))
         pairs.sort(key=lambda st: depth(st[1]))  # parents first
+        if not pairs:
+            raise RuntimeError(f"no bone pairs matched for source={source!r}; check the source skeleton names")
 
-        s_hip = src.pose.bones.get("Hips")
+        s_hip = src.pose.bones.get(SRC_HIP[source])
         t_hip = tgt.pose.bones.get(P + "Hips") or tgt.pose.bones.get("Hips")
 
         # Align the source armature's WORLD frame to the target's (BVH and FBX import with

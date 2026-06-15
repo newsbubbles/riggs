@@ -11,6 +11,18 @@ import json
 import os
 import unreal
 
+# UE 5.7 routes FBX through the Interchange importer by default. Interchange's
+# import-progress UI calls FSlateApplication::Get(), which asserts
+# (CurrentApplication.IsValid(), SlateApplication.h:321) when run truly headless
+# under -run=pythonscript -unattended. Force the LEGACY FBX importer, which is
+# commandlet/headless-safe and honors the FbxImportUI options we build below.
+for _cvar in ("Interchange.FeatureFlags.Import.FBX 0",
+              "Interchange.FeatureFlags.Import.Enable 0"):
+    try:
+        unreal.SystemLibrary.execute_console_command(None, _cvar)
+    except Exception as _e:
+        print("cvar set failed:", _cvar, _e)
+
 A = json.loads(os.environ.get("RIGGS_UE_ARGS", "{}"))
 FBX = A.get("fbx", "D:/riggs/out/Guard_UE.fbx")
 SKELETON = A.get("skeleton", "/Game/Mannequin/Character/Mesh/UE4_Mannequin_Skeleton")

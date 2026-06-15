@@ -36,9 +36,31 @@ python src/riggs/blender_runner.py src/riggs/bpy_scripts/retarget_motion.py \
   '{"target":"out/Guard_mia.fbx","bvh":"out/motion/walk.bvh",
     "output":"out/motion/Guard_walk.fbx","out_dir":"out/anim","name":"walk","view":"side"}'
 ```
-`retarget_motion.py` does a delta-rotation SOMA→Mixamo transfer (the joint map is in the script),
-bakes it onto the rig, exports an FBX, and renders preview frames. **Use `"view":"side"`** to check
-the result: a walk's leg swing is sagittal and looks static head-on (front view fooled us once).
+`retarget_motion.py` does a delta-rotation transfer onto the Mixamo rig, bakes it, exports an FBX, and
+renders preview frames. **Use `"view":"side"`** to check the result: a walk's leg swing is sagittal and
+looks static head-on (front view fooled us once).
+
+## Retargeting EXISTING library animations (not just Kimodo)
+`retarget_motion.py` takes a **`"source"`** preset so it can retarget any humanoid clip onto the rig,
+not only Kimodo's SOMA output. The `"bvh"` arg also accepts an `.fbx` source.
+- `"source":"mixamo"` — **best for a riggs/Mixamo-rigged character.** The rig IS a Mixamo skeleton, so
+  Mixamo's own free, commercial-OK animation library ([mixamo.com](https://www.mixamo.com)) maps with
+  near-zero retargeting (same bone names, same axis conventions). This sidesteps the Mixamo-vs-Mannequin
+  bone-orientation problem entirely. **Recommend this for stock locomotion** instead of fighting UE.
+- `"source":"mannequin"` — UE4 `SK_Mannequin` (3-spine) animations → Mixamo rig. Export a Mannequin
+  AnimSequence from UE as FBX, point `"bvh"` at it. (UE5 Manny is 5-spine; the map covers the UE4
+  3-spine layout that datastorm's `SK_Mannequin` uses.)
+- `"source":"soma"` (default) — Kimodo BVH output.
+
+Example (Mixamo clip onto the Guard):
+```
+python src/riggs/blender_runner.py src/riggs/bpy_scripts/retarget_motion.py \
+  '{"source":"mixamo","target":"out/Guard_mia.fbx","bvh":"out/motion/SomeMixamoWalk.fbx",
+    "output":"out/motion/Guard_walk.fbx","out_dir":"out/anim","name":"walk","view":"side"}'
+```
+To get a source clip with no UE involvement: download a free animation from mixamo.com (FBX, "Without
+Skin" is fine) — it's already the Guard's skeleton. For the Guard specifically (a Mixamo rig), this is
+the cleanest, highest-quality, commercial route to stock motion.
 
 ## Prompting tips (learned the hard way)
 - **Be explicit about the arms.** "walk forward confidently" gave arms-raised-forward; the retarget
